@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block content %}<h1>Audit trail</h1><table><tr><th>Date</th><th>Commitment</th><th>Event</th><th>Actor</th><th>Details</th></tr>{% for e in events %}<tr><td>{{e.created_at}}</td><td>{{e.commitment_id or '-'}}</td><td>{{e.event_type}}</td><td>{{e.actor}}</td><td>{{e.details}}</td></tr>{% endfor %}</table>{% endblock %}

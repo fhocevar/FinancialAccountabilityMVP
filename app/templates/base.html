@@ -1,0 +1,2 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{{ app_name }}</title><link rel="stylesheet" href="/static/style.css"></head><body>
+<header><strong>{{ app_name }}</strong>{% if user %}<nav><a href="/">Dashboard</a><a href="/meetings">Meetings</a><a href="/clients">Clients</a><a href="/review">Review</a><a href="/audit">Audit</a></nav><form method="post" action="/logout"><button>Logout {{ user.name }}</button></form>{% endif %}</header><main>{% block content %}{% endblock %}</main></body></html>

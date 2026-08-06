@@ -1,0 +1,51 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.pyc
+artifacts/*.joblib
+data/banner.csv
+postgres_data/
+
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*
+
+!.env.example
+
+# ML
+artifacts/
+model_cache/
+
+# Data
+data/banner.csv
+data/documents_scanned/
+
+# PostgreSQL
+*.db
+
+# Logs
+logs/
+*.log
+
+# Docker
+postgres_data/
+
+# OS
+.DS_Store
+Thumbs.db

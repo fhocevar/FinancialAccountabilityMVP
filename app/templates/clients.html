@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block content %}<h1>Clients</h1><table><tr><th>Name</th><th>Owner</th><th>External ID</th><th>Commitments</th></tr>{% for c in clients %}<tr><td><a href="/clients/{{c.id}}">{{c.name}}</a></td><td>{{c.owner}}</td><td>{{c.external_id or '-'}}</td><td>{{c.commitments|length}}</td></tr>{% endfor %}</table>{% endblock %}
