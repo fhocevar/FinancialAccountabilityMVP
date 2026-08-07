@@ -165,7 +165,7 @@ async def create_meeting(request: Request, title: str = Form(...), meeting_date:
         filename = Path(file.filename).name
         path = UPLOAD_DIR / f"{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}_{filename}"
         path.write_bytes(await file.read())
-        source = "AUDIO" if path.suffix.lower() in {".mp3", ".wav", ".m4a", ".mp4"} else "FILE"
+        source = "AUDIO" if path.suffix.lower() in {".mp3", ".wav", ".m4a", ".mp4", ".ogg",".webm"} else "FILE"
         if source == "AUDIO":
             try: text = transcribe_audio(path)
             except RuntimeError as exc: raise HTTPException(400, str(exc))

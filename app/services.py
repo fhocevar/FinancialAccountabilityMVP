@@ -3,7 +3,7 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Any
-
+import sys
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
@@ -28,14 +28,15 @@ class ExtractedCommitment(BaseModel):
 
 
 def transcribe_audio(path: Path) -> str:
-    if not WHISPER_COMMAND:
+    if not path.exists():
         raise RuntimeError(
-            "Whisper is not configured. "
-            "Set WHISPER_COMMAND or paste a transcript."
+            f"Audio file not found: {path}"
         )
 
     command = [
-        *WHISPER_COMMAND.split(),
+        sys.executable,
+        "-m",
+        "scripts.transcribe",
         str(path),
     ]
 
@@ -44,19 +45,20 @@ def transcribe_audio(path: Path) -> str:
         capture_output=True,
         text=True,
         timeout=1800,
+        cwd=Path(__file__).resolve().parent.parent,
     )
 
     if result.returncode != 0:
         raise RuntimeError(
             result.stderr.strip()
-            or "Whisper command failed"
+            or "Whisper transcription failed"
         )
 
     transcript = result.stdout.strip()
 
     if not transcript:
         raise RuntimeError(
-            "Whisper returned an empty transcript."
+            "Whisper returned an empty transcript"
         )
 
     return transcript
