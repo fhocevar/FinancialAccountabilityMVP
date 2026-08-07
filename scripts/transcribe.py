@@ -35,7 +35,7 @@ def main() -> None:
     segments, info = model.transcribe(
     str(audio),
     language="en",
-    beam_size=5,
+    beam_size=1,
     vad_filter=True,
     initial_prompt=(
         "Financial services meeting. "
