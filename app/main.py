@@ -10,13 +10,11 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import APP_NAME, BASE_DIR, SECRET_KEY, UPLOAD_DIR
-from .database import Base, SessionLocal, engine, get_db
+from .database import SessionLocal, get_db
 from .models import AuditEvent, Client, Commitment, Meeting, User
-from .security import current_user, hash_password, verify_password
+from .security import (current_user,hash_password,require_roles,verify_password,)
 from .services import extract_commitments, resolve_client, transcribe_audio
 
-
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title=APP_NAME,
@@ -128,14 +126,40 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     return render(request, "dashboard.html", rows=rows, counts=counts)
 
 @app.get("/meetings", response_class=HTMLResponse)
-def meetings_page(request: Request, db: Session = Depends(get_db)):
-    require(request, db)
-    meetings = list(db.scalars(select(Meeting).order_by(Meeting.created_at.desc())))
-    return render(request, "meetings.html", meetings=meetings)
+def meetings_page(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    require_roles(
+        request,
+        db,
+        "MANAGER",
+        "ADVISOR",
+        "REVIEWER",
+    )
+
+    meetings = list(
+        db.scalars(
+            select(Meeting).order_by(
+                Meeting.created_at.desc()
+            )
+        )
+    )
+
+    return render(
+        request,
+        "meetings.html",
+        meetings=meetings,
+    )
 
 @app.post("/meetings")
 async def create_meeting(request: Request, title: str = Form(...), meeting_date: str = Form(...), transcript: str = Form(""), file: UploadFile | None = File(None), db: Session = Depends(get_db)):
-    user = require(request, db)
+    user = require_roles(
+    request,
+    db,
+    "MANAGER",
+    "ADVISOR",
+)
     text, filename, source = transcript.strip(), None, "TEXT"
     if file and file.filename:
         filename = Path(file.filename).name
@@ -160,33 +184,78 @@ async def create_meeting(request: Request, title: str = Form(...), meeting_date:
 
 @app.get("/meetings/{meeting_id}", response_class=HTMLResponse)
 def meeting_detail(meeting_id: int, request: Request, db: Session = Depends(get_db)):
-    require(request, db)
+    require_roles(
+    request,
+    db,
+    "MANAGER",
+    "ADVISOR",
+    "REVIEWER",
+)
     meeting = db.get(Meeting, meeting_id)
     if not meeting: raise HTTPException(404, "Meeting not found")
     return render(request, "meeting_detail.html", meeting=meeting)
 
 @app.get("/clients", response_class=HTMLResponse)
-def clients_page(request: Request, db: Session = Depends(get_db)):
-    require(request, db)
-    clients = list(db.scalars(select(Client).order_by(Client.name)))
-    return render(request, "clients.html", clients=clients)
+def clients_page(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    require_roles(
+        request,
+        db,
+        "MANAGER",
+        "ADVISOR",
+        "REVIEWER",
+        "AUDITOR",
+    )
+
+    clients = list(
+        db.scalars(
+            select(Client).order_by(
+                Client.name
+            )
+        )
+    )
+
+    return render(
+        request,
+        "clients.html",
+        clients=clients,
+    )
 
 @app.get("/clients/{client_id}", response_class=HTMLResponse)
 def client_detail(client_id: int, request: Request, db: Session = Depends(get_db)):
-    require(request, db)
+    require_roles(
+    request,
+    db,
+    "MANAGER",
+    "ADVISOR",
+    "REVIEWER",
+    "AUDITOR",
+)
     client = db.get(Client, client_id)
     if not client: raise HTTPException(404, "Client not found")
     return render(request, "client_detail.html", client=client)
 
 @app.get("/review", response_class=HTMLResponse)
 def review_page(request: Request, db: Session = Depends(get_db)):
-    require(request, db)
+    require_roles(
+        request,
+        db,
+        "MANAGER",
+        "REVIEWER",
+    )
     items = list(db.scalars(select(Commitment).where(Commitment.review_status == "PENDING_REVIEW").order_by(Commitment.created_at)))
     return render(request, "review.html", items=items)
 
 @app.post("/commitments/{commitment_id}/review")
 def review_commitment(commitment_id: int, request: Request, client_name: str = Form(...), description: str = Form(...), owner: str = Form(...), due_date: str = Form(""), action: str = Form(...), db: Session = Depends(get_db)):
-    user = require(request, db)
+    user = require_roles(
+    request,
+    db,
+    "MANAGER",
+    "REVIEWER",
+)
     item = db.get(Commitment, commitment_id)
     if not item: raise HTTPException(404, "Commitment not found")
     before = f"{item.client_name}|{item.description}|{item.owner}|{item.review_status}"
@@ -204,22 +273,77 @@ def review_commitment(commitment_id: int, request: Request, client_name: str = F
 
 @app.post("/commitments/{commitment_id}/close")
 def close_commitment(commitment_id: int, request: Request, db: Session = Depends(get_db)):
-    user = require(request, db); item = db.get(Commitment, commitment_id)
+    user = require_roles(
+    request,
+    db,
+    "MANAGER",
+); item = db.get(Commitment, commitment_id)
     if not item: raise HTTPException(404, "Commitment not found")
     item.status, item.closed_at = "CLOSED", datetime.utcnow()
     db.add(AuditEvent(commitment_id=item.id, user_id=user.id, event_type="COMMITMENT_CLOSED", actor=user.email)); db.commit()
     return RedirectResponse("/", 303)
 
 @app.post("/commitments/{commitment_id}/reopen")
-def reopen_commitment(commitment_id: int, request: Request, db: Session = Depends(get_db)):
-    user = require(request, db); item = db.get(Commitment, commitment_id)
-    if not item: raise HTTPException(404, "Commitment not found")
-    item.status, item.closed_at = "OPEN", None
-    db.add(AuditEvent(commitment_id=item.id, user_id=user.id, event_type="COMMITMENT_REOPENED", actor=user.email)); db.commit()
-    return RedirectResponse("/", 303)
+def reopen_commitment(
+    commitment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user = require_roles(
+        request,
+        db,
+        "MANAGER",
+    )
+
+    item = db.get(Commitment, commitment_id)
+
+    if not item:
+        raise HTTPException(
+            status_code=404,
+            detail="Commitment not found",
+        )
+
+    item.status = "OPEN"
+    item.closed_at = None
+
+    db.add(
+        AuditEvent(
+            commitment_id=item.id,
+            user_id=user.id,
+            event_type="COMMITMENT_REOPENED",
+            actor=user.email,
+        )
+    )
+
+    db.commit()
+
+    return RedirectResponse(
+        url="/",
+        status_code=303,
+    )
 
 @app.get("/audit", response_class=HTMLResponse)
-def audit_page(request: Request, db: Session = Depends(get_db)):
-    require(request, db)
-    events = list(db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(500)))
-    return render(request, "audit.html", events=events)
+def audit_page(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    require_roles(
+        request,
+        db,
+        "MANAGER",
+        "AUDITOR",
+    )
+
+    events = list(
+        db.scalars(
+            select(AuditEvent)
+            .order_by(AuditEvent.created_at.desc())
+            .limit(500)
+        )
+    )
+
+    return render(
+        request,
+        "audit.html",
+        events=events,
+    )
