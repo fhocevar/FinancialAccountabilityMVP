@@ -30,6 +30,17 @@ class Meeting(Base):
     source_type: Mapped[str]=mapped_column(String(30), default="TEXT")
     original_filename: Mapped[str|None]=mapped_column(String(255), nullable=True)
     status: Mapped[str]=mapped_column(String(30), default="PROCESSED")
+    # NOVO
+    processing_status: Mapped[str]=mapped_column(String(30),default="COMPLETED",index=True)
+    # NOVO
+    processing_error: Mapped[str|None]=mapped_column(Text,nullable=True)
+    # NOVO
+    processing_started_at: Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
+    # NOVO
+    processing_finished_at: Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
+    # NOVO
+    processing_seconds: Mapped[float|None] = mapped_column(Float,nullable=True)
+    stored_file_path: Mapped[str|None]=mapped_column(Text,nullable=True)
     transcript: Mapped[str]=mapped_column(Text, default="")
     created_by_id: Mapped[int|None]=mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime]=mapped_column(DateTime, default=now)

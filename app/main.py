@@ -153,34 +153,97 @@ def meetings_page(
     )
 
 @app.post("/meetings")
-async def create_meeting(request: Request, title: str = Form(...), meeting_date: str = Form(...), transcript: str = Form(""), file: UploadFile | None = File(None), db: Session = Depends(get_db)):
+async def create_meeting(
+    request: Request,
+    title: str = Form(...),
+    meeting_date: str = Form(...),
+    transcript: str = Form(""),
+    file: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
     user = require_roles(
-    request,
-    db,
-    "MANAGER",
-    "ADVISOR",
-)
-    text, filename, source = transcript.strip(), None, "TEXT"
+        request,
+        db,
+        "MANAGER",
+        "ADVISOR",
+    )
+
+    text = transcript.strip()
+    filename = None
+    source = "TEXT"
+    stored_file_path = None
+
     if file and file.filename:
-        filename = Path(file.filename).name
-        path = UPLOAD_DIR / f"{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}_{filename}"
-        path.write_bytes(await file.read())
-        source = "AUDIO" if path.suffix.lower() in {".mp3", ".wav", ".m4a", ".mp4", ".ogg",".webm"} else "FILE"
-        if source == "AUDIO":
-            try: text = transcribe_audio(path)
-            except RuntimeError as exc: raise HTTPException(400, str(exc))
+
+        filename = Path(
+            file.filename
+        ).name
+
+        path = (
+            UPLOAD_DIR
+            / (
+                f"{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}_"
+                f"{filename}"
+            )
+        )
+
+        path.write_bytes(
+            await file.read()
+        )
+
+        stored_file_path = str(
+            path.resolve()
+        )
+
+        audio_extensions = {
+            ".mp3",
+            ".wav",
+            ".m4a",
+            ".mp4",
+            ".ogg",
+            ".webm",
+        }
+
+        if path.suffix.lower() in audio_extensions:
+            source = "AUDIO"
+            text = ""
+
         else:
-            text = path.read_text(encoding="utf-8", errors="replace").strip()
-    if not text: raise HTTPException(400, "Transcript is required")
-    meeting = Meeting(title=title, meeting_date=meeting_date, transcript=text, source_type=source, original_filename=filename, created_by_id=user.id)
-    db.add(meeting); db.flush()
-    for item in extract_commitments(text):
-        client = resolve_client(db, item.get("client_name", "Unknown"))
-        commitment = Commitment(meeting_id=meeting.id, client_id=client.id, client_name=client.name, description=item.get("description") or item.get("evidence", ""), owner=item.get("owner") or "Unassigned", due_date=item.get("due_date"), confidence=float(item.get("confidence", .5)), evidence=item.get("evidence", ""))
-        db.add(commitment); db.flush()
-        db.add(AuditEvent(commitment_id=commitment.id, user_id=user.id, event_type="COMMITMENT_EXTRACTED", actor=user.email, details=commitment.evidence))
+            source = "FILE"
+
+            text = path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            ).strip()
+
+    if (
+        source != "AUDIO"
+        and not text
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Transcript or audio file is required",
+        )
+
+    meeting = Meeting(
+        title=title.strip(),
+        meeting_date=meeting_date,
+        transcript=text,
+        source_type=source,
+        original_filename=filename,
+        stored_file_path=stored_file_path,
+        processing_status="QUEUED",
+        created_by_id=user.id,
+    )
+
+    db.add(meeting)
     db.commit()
-    return RedirectResponse(f"/meetings/{meeting.id}", 303)
+    db.refresh(meeting)
+
+    return RedirectResponse(
+        url=f"/meetings/{meeting.id}",
+        status_code=303,
+    )
 
 @app.get("/meetings/{meeting_id}", response_class=HTMLResponse)
 def meeting_detail(meeting_id: int, request: Request, db: Session = Depends(get_db)):
