@@ -1,48 +1,323 @@
 # Financial Accountability MVP
 
-MVP local para transformar reuniões em compromissos rastreáveis, com revisão humana, clientes, dashboard, login e auditoria.
+> **Enterprise AI platform that transforms meeting transcripts into actionable commitments with human validation, audit trail, asynchronous processing and local LLM support.**
 
-## Recursos
-- Login e sessão local; perfis preparados no modelo de usuário.
-- Reuniões por texto, TXT e áudio.
-- Áudio via comando Whisper configurável (`WHISPER_COMMAND`).
-- Extração por regras com contexto; Ollama opcional (`USE_OLLAMA=true`).
-- Clientes consolidados e timeline.
-- Revisão, aprovação, rejeição, fechamento e reabertura.
-- Dashboard RAG: Green <=7 dias, Yellow 8-21, Red >21.
-- Auditoria por usuário.
-- SQLite local ou PostgreSQL via Docker Compose.
+---
 
-## Execução rápida no Windows
+# Overview
+
+Financial Accountability MVP is an enterprise-oriented AI application designed to eliminate one of the biggest operational problems in financial organizations:
+
+> **Commitments made during meetings that are never tracked until they become business problems.**
+
+The platform automatically processes meeting transcripts or audio recordings, extracts actionable commitments using a local Large Language Model, routes them for human validation, tracks their lifecycle and provides complete accountability through dashboards and audit trails.
+
+Everything runs locally without sending sensitive financial information to external AI providers.
+
+---
+
+# Architecture
+
+```
+                 Audio / Text
+                       │
+                       ▼
+              Meeting Intake
+                       │
+                       ▼
+          Background Processing Worker
+                       │
+          ┌────────────┴────────────┐
+          ▼                         ▼
+   Faster-Whisper              Text Input
+          │                         │
+          └────────────┬────────────┘
+                       ▼
+                 Ollama (Llama 3.1)
+                       │
+                       ▼
+          Commitment Extraction Engine
+                       │
+                       ▼
+              Human Review Queue
+                       │
+                       ▼
+        Approved Business Commitments
+                       │
+        ┌──────────────┴──────────────┐
+        ▼                             ▼
+ Dashboard                    Audit Trail
+```
+
+---
+
+# Main Features
+
+## AI-powered meeting processing
+
+* Audio transcription using Faster-Whisper
+* Local LLM inference using Ollama
+* Structured commitment extraction
+* Confidence scoring
+* Evidence preservation
+* Human validation workflow
+
+---
+
+## Meeting Management
+
+* Text meetings
+* Audio meetings
+* TXT upload
+* Automatic transcription
+* Processing status tracking
+* Background worker
+* Retry processing
+
+---
+
+## Commitment Lifecycle
+
+* Automatic extraction
+* Human approval
+* Rejection workflow
+* Closing
+* Reopening
+* Full audit history
+
+---
+
+## Client Management
+
+* Automatic client creation
+* Commitment history
+* Timeline
+* Ownership
+
+---
+
+## Dashboard
+
+Traffic-light visualization:
+
+| Status    | Rule      |
+| --------- | --------- |
+| 🟢 Green  | ≤ 7 days  |
+| 🟡 Yellow | 8–21 days |
+| 🔴 Red    | > 21 days |
+
+---
+
+## Security
+
+* Login
+* Session management
+* Role Based Access Control (RBAC)
+* Audit logging
+* Background processing isolation
+
+---
+
+# Technology Stack
+
+## Backend
+
+* Python 3.13
+* FastAPI
+* SQLAlchemy 2.x
+* Alembic
+* PostgreSQL
+* SQLite
+
+---
+
+## Artificial Intelligence
+
+* Ollama
+* Llama 3.1 8B
+* Faster-Whisper
+* Local inference
+* Prompt engineering
+
+---
+
+## Frontend
+
+* Jinja2
+* HTML5
+* CSS
+
+---
+
+## Infrastructure
+
+* Docker
+* Docker Compose
+* Uvicorn
+
+---
+
+# Current Processing Flow
+
+```
+Meeting
+      │
+      ▼
+Queued
+      │
+      ▼
+Transcribing
+      │
+      ▼
+Extracting
+      │
+      ▼
+Pending Review
+      │
+      ▼
+Approved
+      │
+      ▼
+Closed
+```
+
+---
+
+# Project Structure
+
+```
+app/
+ ├── main.py
+ ├── worker.py
+ ├── models.py
+ ├── services.py
+ ├── security.py
+ ├── database.py
+ ├── templates/
+ ├── static/
+ └── integrations/
+
+scripts/
+migrations/
+tests/
+docker-compose.yml
+README.md
+```
+
+---
+
+# Running locally
+
+## Create virtual environment
+
 ```powershell
-py -3.12 -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-Acesse http://localhost:8000
-
-Conta inicial: `admin@local` / `Admin123!` (troque antes de uso real).
-
-## PostgreSQL
-```powershell
-docker compose up --build
 ```
 
-## Ollama
-Defina no ambiente:
+---
+
+## Install dependencies
+
 ```powershell
+pip install -r requirements.txt
+```
+
+---
+
+## Start PostgreSQL
+
+```powershell
+docker compose up -d
+```
+
+---
+
+## Configure environment
+
+```powershell
+$env:DATABASE_URL="postgresql+psycopg://financial:financial@localhost:5432/financial"
+
 $env:USE_OLLAMA="true"
+
 $env:OLLAMA_URL="http://localhost:11434"
+
 $env:OLLAMA_MODEL="llama3.1:8b"
+
+$env:WHISPER_COMMAND="python -m scripts.transcribe"
 ```
 
-## Whisper
-A integração é intencionalmente desacoplada. `WHISPER_COMMAND` deve apontar para um comando local que recebe o caminho do áudio e escreve a transcrição em stdout. Exemplo de wrapper:
+---
+
+## Start Worker
+
 ```powershell
-$env:WHISPER_COMMAND="python scripts/transcribe.py"
+python -m app.worker
 ```
-Sem configuração, o sistema continua operando por transcrição colada ou TXT.
 
-## Segurança
-Esta entrega é um MVP técnico. Antes da produção: TLS, segredo forte, redefinição de senha, RBAC completo, Alembic, backups, antivírus de upload, limites de arquivo, CSRF, logs estruturados e hardening do host.
+---
+
+## Start API
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+---
+
+Open
+
+http://localhost:8000
+
+---
+
+# Default Accounts
+
+Administrator
+
+```
+admin@local
+Admin123!
+```
+
+Additional test users
+
+* manager@local
+* advisor@local
+* reviewer@local
+* auditor@local
+
+---
+
+# Current Capabilities
+
+* ✅ PostgreSQL
+* ✅ Alembic migrations
+* ✅ Local authentication
+* ✅ RBAC
+* ✅ Audit Trail
+* ✅ Background Worker
+* ✅ Faster-Whisper integration
+* ✅ Ollama integration
+* ✅ Human Review Queue
+* ✅ Dashboard
+* ✅ Docker support
+
+---
+
+# Planned Features
+
+* Salesforce Integration
+* CRM Synchronization
+* Automatic commitment completion detection
+* Semantic search
+* Vector database
+* Email notifications
+* Calendar integration
+* Enterprise reporting
+
+---
+
+# License
+
+MIT License
