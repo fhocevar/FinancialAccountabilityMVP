@@ -25,7 +25,7 @@ def audit(
     meeting: Meeting,
     event_type: str,
     details: str = "",
-):
+) -> None:
     db.add(
         AuditEvent(
             user_id=meeting.created_by_id,
@@ -36,10 +36,7 @@ def audit(
     )
 
 
-def process_meeting(
-    meeting_id: int,
-) -> None:
-
+def process_meeting(meeting_id: int) -> None:
     with SessionLocal() as db:
         meeting = db.get(
             Meeting,
@@ -47,21 +44,44 @@ def process_meeting(
         )
 
         if not meeting:
+            print(
+                f"[WORKER] Meeting {meeting_id} not found."
+            )
             return
 
         if meeting.processing_status != "QUEUED":
             return
 
+        started_at = utc_now()
+
         try:
-            meeting.processing_started_at = utc_now()
+            meeting.processing_started_at = started_at
+            meeting.processing_finished_at = None
+            meeting.processing_seconds = None
             meeting.processing_error = None
+
+            audit(
+                db,
+                meeting,
+                "MEETING_PROCESSING_STARTED",
+                f"Meeting {meeting.id}",
+            )
+
+            db.commit()
 
             #
             # TRANSCRIPTION
             #
             if meeting.source_type == "AUDIO":
-
                 meeting.processing_status = "TRANSCRIBING"
+
+                audit(
+                    db,
+                    meeting,
+                    "MEETING_TRANSCRIBING",
+                    meeting.original_filename or "",
+                )
+
                 db.commit()
 
                 if not meeting.stored_file_path:
@@ -73,16 +93,36 @@ def process_meeting(
                     meeting.stored_file_path
                 )
 
+                if not audio_path.exists():
+                    raise RuntimeError(
+                        f"Audio file not found: {audio_path}"
+                    )
+
                 transcript = transcribe_audio(
                     audio_path
-                )
+                ).strip()
+
+                if not transcript:
+                    raise RuntimeError(
+                        "Whisper returned an empty transcript."
+                    )
 
                 meeting.transcript = transcript
+
+                db.commit()
 
             #
             # EXTRACTION
             #
             meeting.processing_status = "EXTRACTING"
+
+            audit(
+                db,
+                meeting,
+                "MEETING_EXTRACTING",
+                f"Model extraction started for meeting {meeting.id}",
+            )
+
             db.commit()
 
             text = (
@@ -100,8 +140,7 @@ def process_meeting(
             )
 
             #
-            # Remove possíveis commitments criados
-            # por uma tentativa anterior.
+            # REMOVE PREVIOUS COMMITMENTS
             #
             existing = list(
                 db.scalars(
@@ -121,7 +160,6 @@ def process_meeting(
             # CREATE COMMITMENTS
             #
             for extracted in extracted_items:
-
                 client = resolve_client(
                     db,
                     extracted.get(
@@ -171,6 +209,11 @@ def process_meeting(
                     )
                 )
 
+            #
+            # FINISH PROCESSING
+            #
+            finished_at = utc_now()
+
             meeting.processing_status = (
                 "PENDING_REVIEW"
                 if extracted_items
@@ -178,7 +221,21 @@ def process_meeting(
             )
 
             meeting.processing_finished_at = (
-                utc_now()
+                finished_at
+            )
+
+            meeting.processing_seconds = (
+                finished_at - started_at
+            ).total_seconds()
+
+            audit(
+                db,
+                meeting,
+                "MEETING_PROCESSING_COMPLETED",
+                (
+                    f"{len(extracted_items)} commitments; "
+                    f"{meeting.processing_seconds:.2f}s"
+                ),
             )
 
             db.commit()
@@ -186,11 +243,11 @@ def process_meeting(
             print(
                 f"[WORKER] Meeting {meeting.id} "
                 f"processed successfully: "
-                f"{len(extracted_items)} commitments"
+                f"{len(extracted_items)} commitments "
+                f"in {meeting.processing_seconds:.2f}s"
             )
 
         except Exception as exc:
-
             db.rollback()
 
             meeting = db.get(
@@ -199,12 +256,29 @@ def process_meeting(
             )
 
             if meeting:
+                finished_at = utc_now()
+
                 meeting.processing_status = "FAILED"
+
                 meeting.processing_error = (
                     f"{type(exc).__name__}: {exc}"
                 )
+
                 meeting.processing_finished_at = (
-                    utc_now()
+                    finished_at
+                )
+
+                if meeting.processing_started_at:
+                    meeting.processing_seconds = (
+                        finished_at
+                        - meeting.processing_started_at
+                    ).total_seconds()
+
+                audit(
+                    db,
+                    meeting,
+                    "MEETING_PROCESSING_FAILED",
+                    meeting.processing_error,
                 )
 
                 db.commit()
@@ -216,9 +290,7 @@ def process_meeting(
 
 
 def get_next_meeting() -> int | None:
-
     with SessionLocal() as db:
-
         meeting = db.scalar(
             select(Meeting)
             .where(
@@ -238,13 +310,11 @@ def get_next_meeting() -> int | None:
 
 
 def main() -> None:
-
     print(
         "[WORKER] Financial Accountability worker started."
     )
 
     while True:
-
         meeting_id = get_next_meeting()
 
         if meeting_id is None:

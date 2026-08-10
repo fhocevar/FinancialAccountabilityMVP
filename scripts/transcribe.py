@@ -27,7 +27,7 @@ def main() -> None:
         raise SystemExit(2)
 
     model = WhisperModel(
-        "small",
+        "base",
         device="cpu",
         compute_type="int8",
     )

@@ -1,1 +1,217 @@
-{% extends 'base.html' %}{% block content %}<h1>{{meeting.title}}</h1><p>{{meeting.meeting_date}} · {{meeting.source_type}}</p><h2>Transcript</h2><pre>{{meeting.transcript}}</pre><h2>Extracted commitments</h2><table><tr><th>Client</th><th>Description</th><th>Owner</th><th>Confidence</th><th>Review</th></tr>{% for c in meeting.commitments %}<tr><td>{{c.client_name}}</td><td>{{c.description}}</td><td>{{c.owner}}</td><td>{{(c.confidence*100)|round|int}}%</td><td>{{c.review_status}}</td></tr>{% endfor %}</table>{% endblock %}
+```html
+{% extends "base.html" %}
+
+{% block content %}
+
+<h1>{{ meeting.title }}</h1>
+
+<p>
+    {{ meeting.meeting_date }}
+    ·
+    {{ meeting.source_type }}
+</p>
+
+
+<div class="panel">
+
+    <h2>Processing</h2>
+
+    <p>
+        <strong>Status:</strong>
+
+        {% if meeting.processing_status == "QUEUED" %}
+            🕒 QUEUED
+
+        {% elif meeting.processing_status == "TRANSCRIBING" %}
+            🎙️ TRANSCRIBING
+
+        {% elif meeting.processing_status == "EXTRACTING" %}
+            🤖 EXTRACTING
+
+        {% elif meeting.processing_status == "PENDING_REVIEW" %}
+            🟡 PENDING REVIEW
+
+        {% elif meeting.processing_status == "COMPLETED" %}
+            ✅ COMPLETED
+
+        {% elif meeting.processing_status == "FAILED" %}
+            ❌ FAILED
+
+        {% else %}
+            {{ meeting.processing_status }}
+        {% endif %}
+    </p>
+
+
+    {% if meeting.processing_started_at %}
+    <p>
+        <strong>Started:</strong>
+        {{ meeting.processing_started_at }}
+    </p>
+    {% endif %}
+
+
+    {% if meeting.processing_finished_at %}
+    <p>
+        <strong>Finished:</strong>
+        {{ meeting.processing_finished_at }}
+    </p>
+    {% endif %}
+
+
+    {% if meeting.processing_seconds is not none %}
+    <p>
+        <strong>Processing time:</strong>
+        {{ "%.1f"|format(meeting.processing_seconds) }}
+        seconds
+    </p>
+    {% endif %}
+
+
+    {% if meeting.original_filename %}
+    <p>
+        <strong>Original file:</strong>
+        {{ meeting.original_filename }}
+    </p>
+    {% endif %}
+
+
+    {% if meeting.processing_error %}
+
+    <div class="error">
+        <strong>Processing error:</strong>
+
+        <pre>{{ meeting.processing_error }}</pre>
+    </div>
+
+    {% endif %}
+
+
+    {% if meeting.processing_status in [
+        "FAILED",
+        "COMPLETED",
+        "PENDING_REVIEW"
+    ] %}
+
+    <form
+        method="post"
+        action="/meetings/{{ meeting.id }}/retry"
+    >
+        <button type="submit">
+            Reprocess meeting
+        </button>
+    </form>
+
+    {% endif %}
+
+</div>
+
+
+<h2>Transcript</h2>
+
+{% if meeting.transcript %}
+
+<pre>{{ meeting.transcript }}</pre>
+
+{% elif meeting.processing_status in [
+    "QUEUED",
+    "TRANSCRIBING"
+] %}
+
+<p>
+    Transcript is being generated...
+</p>
+
+{% else %}
+
+<p>
+    No transcript available.
+</p>
+
+{% endif %}
+
+
+<h2>Extracted commitments</h2>
+
+{% if meeting.commitments %}
+
+<table>
+    <thead>
+        <tr>
+            <th>Client</th>
+            <th>Description</th>
+            <th>Owner</th>
+            <th>Confidence</th>
+            <th>Review</th>
+        </tr>
+    </thead>
+
+    <tbody>
+        {% for commitment in meeting.commitments %}
+        <tr>
+            <td>
+                {{ commitment.client_name }}
+            </td>
+
+            <td>
+                {{ commitment.description }}
+            </td>
+
+            <td>
+                {{ commitment.owner }}
+            </td>
+
+            <td>
+                {{ (commitment.confidence * 100) | round | int }}%
+            </td>
+
+            <td>
+                {{ commitment.review_status }}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% elif meeting.processing_status in [
+    "QUEUED",
+    "TRANSCRIBING",
+    "EXTRACTING"
+] %}
+
+<p>
+    Commitments are still being processed...
+</p>
+
+{% else %}
+
+<p>
+    No commitments extracted.
+</p>
+
+{% endif %}
+
+
+{% if meeting.processing_status in [
+    "QUEUED",
+    "TRANSCRIBING",
+    "EXTRACTING"
+] %}
+
+<div class="panel">
+    <p>
+        Processing in background.
+        This page will refresh automatically.
+    </p>
+</div>
+
+<script>
+    setTimeout(function () {
+        window.location.reload();
+    }, 5000);
+</script>
+
+{% endif %}
+
+{% endblock %}
+```

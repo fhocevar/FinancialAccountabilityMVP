@@ -13,7 +13,7 @@ from .config import APP_NAME, BASE_DIR, SECRET_KEY, UPLOAD_DIR
 from .database import SessionLocal, get_db
 from .models import AuditEvent, Client, Commitment, Meeting, User
 from .security import (current_user,hash_password,require_roles,verify_password,)
-from .services import extract_commitments, resolve_client, transcribe_audio
+from .services import resolve_client
 
 
 app = FastAPI(
@@ -257,6 +257,62 @@ def meeting_detail(meeting_id: int, request: Request, db: Session = Depends(get_
     meeting = db.get(Meeting, meeting_id)
     if not meeting: raise HTTPException(404, "Meeting not found")
     return render(request, "meeting_detail.html", meeting=meeting)
+
+@app.post("/meetings/{meeting_id}/retry")
+def retry_meeting(
+    meeting_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user = require_roles(
+        request,
+        db,
+        "MANAGER",
+        "ADVISOR",
+    )
+
+    meeting = db.get(
+        Meeting,
+        meeting_id,
+    )
+
+    if not meeting:
+        raise HTTPException(
+            status_code=404,
+            detail="Meeting not found",
+        )
+
+    if meeting.processing_status in {
+        "QUEUED",
+        "TRANSCRIBING",
+        "EXTRACTING",
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail="Meeting is already being processed",
+        )
+
+    meeting.processing_status = "QUEUED"
+    meeting.processing_error = None
+    meeting.processing_started_at = None
+    meeting.processing_finished_at = None
+    meeting.processing_seconds = None
+
+    db.add(
+        AuditEvent(
+            user_id=user.id,
+            event_type="MEETING_REPROCESS_QUEUED",
+            actor=user.email,
+            details=f"Meeting {meeting.id}",
+        )
+    )
+
+    db.commit()
+
+    return RedirectResponse(
+        url=f"/meetings/{meeting.id}",
+        status_code=303,
+    )
 
 @app.get("/clients", response_class=HTMLResponse)
 def clients_page(
